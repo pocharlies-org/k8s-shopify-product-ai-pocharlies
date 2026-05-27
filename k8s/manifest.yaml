@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: product-ai-app
+  labels:
+    app.kubernetes.io/name: product-ai-app
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: product-ai-app
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: product-ai-app
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      imagePullSecrets:
+        - name: harbor-pull
+      nodeSelector:
+        role: edge
+        kubernetes.io/arch: amd64
+      tolerations:
+        - key: role
+          operator: Equal
+          value: edge
+          effect: NoSchedule
+      containers:
+        - name: app
+          image: harbor.e-dani.com/homelab/shopify-product-ai-app:pending
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3459
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: PORT
+              value: "3459"
+            - name: SHOPIFY_APP_URL
+              value: https://skirmshop.e-dani.com/product-ai
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: shared-postgres-app
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: shared-postgres-app
+                  key: password
+            - name: DATABASE_URL
+              value: postgresql://$(DB_USER):$(DB_PASSWORD)@postgres-shared-rw.databases.svc.cluster.local:5432/product_ai
+          envFrom:
+            - secretRef:
+                name: product-ai-secrets
+                optional: true
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 192Mi
+            limits:
+              memory: 768Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: product-ai-app
+  labels:
+    app.kubernetes.io/name: product-ai-app
+spec:
+  selector:
+    app.kubernetes.io/name: product-ai-app
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
